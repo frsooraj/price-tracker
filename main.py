@@ -4,24 +4,35 @@ import mysql.connector
 from bs4 import BeautifulSoup
 from pathlib import Path
 from dotenv import load_dotenv
+from flask import Flask
+from threading import Thread
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
 
-# 1. SMART LOAD CONFIGURATION
-# This ensures Python finds the .env file in the same folder as the script
+# --- 1. FREE TIER KEEP-ALIVE (FLASK) ---
+# Render's free 'Web Service' tier needs an open port.
+flask_app = Flask('')
+
+@flask_app.route('/')
+def home():
+    return "Bot is running!"
+
+def run_flask():
+    # Render uses port 10000 by default, but we'll use 8080 or let Render decide
+    port = int(os.environ.get("PORT", 8080))
+    flask_app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run_flask)
+    t.daemon = True
+    t.start()
+
+# --- 2. CONFIGURATION & DATABASE ---
 env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-DB_HOST = os.getenv("DB_HOST")
+TOKEN = os.getenv("TELEGRAM_TOKEN", "8543572699:AAEQkrW8GfVcDJhIpdwMKU2KussdhwC0SJA")
 
-# Security Check: Alert if .env variables are missing
-if not TOKEN or not DB_HOST:
-    print("⚠️  WARNING: .env variables not found!")
-    print(f"Check if this file exists and is not empty: {env_path}")
-    print("Attempting to run with fallback/hardcoded values for testing...")
-
-# 2. DATABASE CONFIGURATION
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "mysql-26e2de24-sheenaanil1977-8be8.l.aivencloud.com"),
     "user": os.getenv("DB_USER", "avnadmin"),
@@ -31,88 +42,81 @@ DB_CONFIG = {
 }
 
 def get_db_connection():
-    # 'use_pure=True' prevents the "Named Pipe" error on Windows
     return mysql.connector.connect(
         **DB_CONFIG,
-        use_pure=True,
+        use_pure=True,  # Fixes Windows 'Named Pipe' errors
         ssl_disabled=False 
     )
 
-# 3. AMAZON SCRAPER ENGINE
+# --- 3. SCRAPER ENGINE ---
 def scrape_amazon_price(url):
+    # Clean URL: Remove everything after the '?'
+    clean_url = url.split('?')[0].split('ref')[0]
+    
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept-Language": "en-IN,en-GB,en-US;q=0.9,en;q=0.8",
-        "Referer": "https://www.google.com/"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Accept-Language": "en-IN,en-GB,en-US;q=0.9,en;q=0.8"
     }
     try:
-        response = requests.get(url, headers=headers, timeout=15)
+        response = requests.get(clean_url, headers=headers, timeout=15)
         soup = BeautifulSoup(response.content, "html.parser")
         
-        # 1. Get Title
-        title = "Amazon Product"
+        # Extract Title
         title_tag = soup.find("span", {"id": "productTitle"})
-        if title_tag:
-            title = title_tag.get_text().strip()[:40] + "..."
-
-        # 2. Try 4 different price locations
-        price_selectors = [
+        title = title_tag.get_text().strip()[:40] + "..." if title_tag else "Amazon Product"
+        
+        # Extract Price (Checking multiple possible Amazon tags)
+        price = None
+        selectors = [
             ("span", {"class": "a-price-whole"}),
-            ("span", {"id": "priceblock_ourprice"}),
-            ("span", {"id": "priceblock_dealprice"}),
-            ("span", {"class": "a-offscreen"})
+            ("span", {"class": "a-offscreen"}),
+            ("span", {"id": "priceblock_ourprice"})
         ]
-
-        for tag, attrs in price_selectors:
-            price_element = soup.find(tag, attrs)
-            if price_element:
-                raw_price = price_element.get_text().replace('₹', '').replace(',', '').strip()
-                # If there's a decimal (like 999.00), take the part before the dot
-                clean_price = raw_price.split('.')[0]
-                if clean_price.isdigit():
-                    return title, float(clean_price)
-
-        return title, None
+        
+        for tag, attrs in selectors:
+            el = soup.find(tag, attrs)
+            if el:
+                p_str = el.get_text().replace('₹', '').replace(',', '').strip()
+                try:
+                    price = float(p_str)
+                    break
+                except: continue
+        
+        return title, price
     except Exception as e:
-        print(f"Scraper error: {e}")
+        print(f"Scrape Error: {e}")
         return None, None
 
-# 4. BOT COMMAND HANDLERS
+# --- 4. BOT COMMANDS ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚀 PricePulse Active! Send /track [URL] to monitor an Amazon product.")
+    await update.message.reply_text("🚀 PricePulse Active!\nUse /track [URL] to monitor prices.")
 
 async def track(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("❌ Usage: /track [Amazon URL]")
         return
 
-    raw_url = context.args[0]
+    url = context.args[0]
+    msg = await update.message.reply_text("🔍 Fetching price...")
     
-    # --- URL CLEANER LOGIC ---
-    # This takes a long link and cuts it at the '?' or 'ref'
-    clean_url = raw_url.split('?')[0].split('ref')[0]
-    # -------------------------
-
-    wait_msg = await update.message.reply_text("🔍 Cleaning link and fetching price...")
-    
-    # Use the clean_url for scraping
-    title, price = scrape_amazon_price(clean_url)
+    title, price = scrape_amazon_price(url)
     
     if price:
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
-            # Store the CLEAN url in the database
-            query = "INSERT INTO products (telegram_id, product_name, current_price, url) VALUES (%s, %s, %s, %s)"
-            cursor.execute(query, (update.effective_user.id, title, price, clean_url))
+            cursor.execute(
+                "INSERT INTO products (telegram_id, product_name, current_price, url) VALUES (%s, %s, %s, %s)",
+                (update.effective_user.id, title, price, url)
+            )
             conn.commit()
             cursor.close()
             conn.close()
-            await wait_msg.edit_text(f"✅ Tracking Started!\n📦 {title}\n💰 Current Price: ₹{price:,.2f}")
+            await msg.edit_text(f"✅ Tracking Started!\n📦 {title}\n💰 Price: ₹{price:,.2f}")
         except Exception as e:
-            await wait_msg.edit_text(f"❌ Database Error: {e}")
+            await msg.edit_text(f"❌ DB Error: {e}")
     else:
-        await wait_msg.edit_text("❌ Amazon is blocking this specific link format. Try a different product or shorten the link.")
+        await msg.edit_text("❌ Could not fetch price. Try a shorter link.")
 
 async def list_items(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -122,21 +126,24 @@ async def list_items(update: Update, context: ContextTypes.DEFAULT_TYPE):
         rows = cursor.fetchall()
         
         if not rows:
-            await update.message.reply_text("Your watchlist is empty.")
+            await update.message.reply_text("Watchlist is empty.")
         else:
-            msg = "📋 **Your Watchlist:**\n\n"
-            for row in rows:
-                msg += f"🆔 `{row[0]}` | {row[1]} | **₹{row[2]:,.2f}**\n"
-            await update.message.reply_text(msg, parse_mode='Markdown')
-        
+            text = "📋 **Watchlist:**\n\n"
+            for r in rows:
+                text += f"🔹 {r[1]} - **₹{r[2]:,.2f}**\n"
+            await update.message.reply_text(text, parse_mode='Markdown')
         cursor.close()
         conn.close()
     except Exception as e:
-        await update.message.reply_text(f"❌ Error fetching list: {e}")
+        await update.message.reply_text(f"❌ Error: {e}")
 
-# 5. MAIN EXECUTION
+# --- 5. MAIN EXECUTION ---
 if __name__ == "__main__":
-    # Ensure Table exists in Aiven Cloud
+    # Start the keep-alive server
+    keep_alive()
+    print("🌐 Keep-alive server started.")
+
+    # DB Table Initialization
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -153,19 +160,15 @@ if __name__ == "__main__":
         conn.commit()
         cursor.close()
         conn.close()
-        print("✅ Cloud Database Connected & Table Ready.")
+        print("✅ Database ready.")
     except Exception as e:
-        print(f"❌ Initial Connection Error: {e}")
+        print(f"❌ DB Connection Failed: {e}")
 
-    # Final Verification of TOKEN
-    FINAL_TOKEN = os.getenv("TELEGRAM_TOKEN", "8609572351:AAECJEKprX6iB7CsOIsm4S1Tlm-66PB-xps")
-    
     # Start Bot
-    app = ApplicationBuilder().token(FINAL_TOKEN).build()
-    
+    app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("track", track))
     app.add_handler(CommandHandler("list", list_items))
     
-    print("🤖 Bot is live and polling...")
+    print("🤖 Bot is live...")
     app.run_polling()
