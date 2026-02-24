@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PricePulse | Professional Price Tracking System</title>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --bg: #0f172a;
+            --card: #1e293b;
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+            --accent: #22c55e;
+        }
+
+        * {
+            box-sizing: border-box;
+            transition: all 0.2s ease;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background-color: var(--bg);
+            color: var(--text-main);
+            margin: 0;
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Navigation */
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.5rem 10%;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(10px);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            border-bottom: 1px solid #1e293b;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Hero Section */
+        .hero {
+            text-align: center;
+            padding: 120px 10% 80px;
+            background: radial-gradient(circle at top, #1e3a8a 0%, #0f172a 70%);
+        }
+
+        .hero h1 {
+            font-size: 3.5rem;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(to right, #ffffff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 900;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            color: var(--text-dim);
+            max-width: 700px;
+            margin: 0 auto 2.5rem;
+        }
+
+        .btn {
+            background-color: var(--primary);
+            color: white;
+            padding: 14px 36px;
+            border-radius: 10px;
+            text-decoration: none;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+        }
+
+        .btn:hover {
+            background-color: var(--primary-hover);
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+        }
+
+        /* Features Grid */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+            padding: 60px 10%;
+        }
+
+        .feature-card {
+            background: var(--card);
+            padding: 2.5rem;
+            border-radius: 20px;
+            border: 1px solid #334155;
+        }
+
+        .feature-card:hover {
+            border-color: var(--primary);
+            background: #243146;
+        }
+
+        .feature-card i {
+            color: var(--primary);
+            margin-bottom: 1.2rem;
+        }
+
+        .feature-card h3 {
+            font-size: 1.4rem;
+            margin-bottom: 1rem;
+        }
+
+        .feature-card p {
+            color: var(--text-dim);
+            font-size: 0.95rem;
+        }
+
+        /* MySQL Live Table Preview */
+        .data-preview {
+            margin: 60px 10%;
+            background: #111827;
+            padding: 3rem;
+            border-radius: 24px;
+            border: 1px solid #334155;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        .data-preview h2 {
+            text-align: center;
+            color: var(--primary);
+            margin-bottom: 2rem;
+        }
+
+        .table-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        th {
+            padding: 15px;
+            color: var(--text-dim);
+            border-bottom: 2px solid #334155;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            letter-spacing: 1px;
+        }
+
+        td {
+            padding: 18px 15px;
+            border-bottom: 1px solid #1e293b;
+            font-family: 'Courier New', monospace;
+        }
+
+        .price-tag {
+            color: var(--accent);
+            font-weight: bold;
+        }
+
+        .status-pill {
+            background: rgba(34, 197, 94, 0.1);
+            color: var(--accent);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            border: 1px solid var(--accent);
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 5rem 10%;
+            color: var(--text-dim);
+            border-top: 1px solid #1e293b;
+        }
+
+        .tech-stack {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 20px;
+            filter: grayscale(1);
+            opacity: 0.6;
+        }
+    </style>
+</head>
+<body>
+
+    <nav>
+        <div class="logo"><i data-lucide="zap"></i> PricePulse</div>
+        <div style="font-size: 0.8rem; color: var(--text-dim);">PROJECT PHASE 1 MILESTONE</div>
+    </nav>
+
+    <section class="hero">
+        <h1>Smart E-Commerce Monitoring</h1>
+        <p>A sophisticated 3-tier architecture utilizing Python, MySQL, and BeautifulSoup to track price fluctuations across Amazon India automatically.</p>
+        <a href="#" class="btn">
+            <i data-lucide="send"></i> Open Telegram Bot
+        </a>
+    </section>
+
+    <section class="features">
+        <div class="feature-card">
+            <i data-lucide="terminal" size="40"></i>
+            <h3>Python Middleware</h3>
+            <p>Asynchronous processing engine that handles user requests and coordinates the scraping and storage workflows.</p>
+        </div>
+        <div class="feature-card">
+            <i data-lucide="database" size="40"></i>
+            <h3>MySQL Persistence</h3>
+            <p>Relational database management ensuring ACID compliance and referential integrity for all user watchlist data.</p>
+        </div>
+        <div class="feature-card">
+            <i data-lucide="layers" size="40"></i>
+            <h3>Data Normalization</h3>
+            <p>Automated cleaning of unstructured HTML data into standardized numeric floats for precise price comparison.</p>
+        </div>
+    </section>
+
+    <section class="data-preview">
+        <h2><i data-lucide="database"></i> Backend Synchronization Preview</h2>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>MySQL ID</th>
+                        <th>User ID (FK)</th>
+                        <th>Product Metadata</th>
+                        <th>Price (Float)</th>
+                        <th>Sync Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>1001</td>
+                        <td>58294021</td>
+                        <td>Apple iPhone 15 (Blue, 128GB)</td>
+                        <td class="price-tag">71999.00</td>
+                        <td><span class="status-pill">Active</span></td>
+                    </tr>
+                    <tr>
+                        <td>1002</td>
+                        <td>58294021</td>
+                        <td>Sony WH-1000XM5 Headphones</td>
+                        <td class="price-tag">26990.00</td>
+                        <td><span class="status-pill">Active</span></td>
+                    </tr>
+                    <tr>
+                        <td>1003</td>
+                        <td>99283104</td>
+                        <td>Samsung Galaxy S24 Ultra</td>
+                        <td class="price-tag">129999.00</td>
+                        <td><span class="status-pill">Active</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <p style="text-align: center; margin-top: 2rem; color: var(--text-dim); font-size: 0.85rem;">
+            Generated from <code>SELECT * FROM products;</code> in MySQL 8.0
+        </p>
+    </section>
+
+    <footer>
+        <p>PricePulse Architecture Implementation</p>
+        <p style="font-size: 0.8rem;">Developed by: Ahammad Yasin, Sooraj, Dinil, Sharon</p>
+        <div class="tech-stack">
+            <span>PYTHON</span> | <span>MYSQL</span> | <span>TELEGRAM API</span> | <span>BEAUTIFULSOUP</span>
+        </div>
+    </footer>
+
+    <script>
+        // Initialize icons
+        lucide.createIcons();
+    </script>
+</body>
+</html>
