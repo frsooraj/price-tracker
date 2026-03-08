@@ -262,7 +262,10 @@ def show_list(message):
             lowest = cursor.fetchone()[0] or price
 
             markup = InlineKeyboardMarkup()
-            markup.row(InlineKeyboardButton("🗑️ Remove", callback_data=f"del_{p_id}"))
+            markup.row(
+                InlineKeyboardButton("🎯 Set Target", callback_data=f"settarget_{p_id}"),
+                InlineKeyboardButton("🗑️ Remove", callback_data=f"del_{p_id}")
+            )
 
             bot.send_message(
                 user_id,
@@ -271,6 +274,44 @@ def show_list(message):
                 parse_mode='Markdown'
             )
         conn.close()
+
+# Handles "Set Target" button tap
+@bot.callback_query_handler(func=lambda call: call.data.startswith('settarget_'))
+def ask_target_price(call):
+    p_id = call.data.split("_")[1]
+    bot.answer_callback_query(call.id)
+    msg = bot.send_message(
+        call.message.chat.id,
+        f"💬 Enter your target price for product `{p_id}` in ₹:\n_(e.g. 1500)_",
+        parse_mode='Markdown'
+    )
+    # Wait for user's next message
+    bot.register_next_step_handler(msg, save_target_price, p_id)
+
+def save_target_price(message, p_id):
+    try:
+        target = int(message.text.strip())
+
+        with db_lock:
+            conn = get_conn()
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE products SET target_price = ? WHERE id = ? AND user_id = ?",
+                (target, p_id, message.chat.id)
+            )
+            affected = cursor.rowcount
+            conn.commit()
+            conn.close()
+
+        if affected == 0:
+            bot.send_message(message.chat.id, "⚠️ Product not found or does not belong to you.")
+        else:
+            bot.send_message(message.chat.id, f"✅ Target set! You'll be alerted when price drops to ₹{target}.")
+    except ValueError:
+        bot.send_message(message.chat.id, "⚠️ Invalid amount. Please enter numbers only like `1500`.", parse_mode='Markdown')
+    except Exception as e:
+        print(f"Error saving target: {e}")
+        bot.send_message(message.chat.id, "⚠️ Something went wrong. Try again.")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('del_'))
 def delete_item(call):
