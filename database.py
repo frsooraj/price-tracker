@@ -1,23 +1,48 @@
 import sqlite3
 
+DB_NAME = 'tracker.db'
+
 def init_db():
-    conn = sqlite3.connect('tracker.db')
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    # Table for Users (Module 2)
+
+    # Users table
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS Users (
-            telegram_id INTEGER PRIMARY KEY, 
+        CREATE TABLE IF NOT EXISTS users (
+            telegram_id INTEGER PRIMARY KEY,
             username TEXT
-        )''')
-    # Table for Products (Module 2)
+        )
+    ''')
+
+    # Products table
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS Products (
+        CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            telegram_id INTEGER,
+            user_id INTEGER,
             product_name TEXT,
+            current_price INTEGER,
             url TEXT,
-            current_price REAL,
-            FOREIGN KEY (telegram_id) REFERENCES Users(telegram_id)
-        )''')
+            target_price INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users(telegram_id)
+        )
+    ''')
+
+    # Price history log
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS price_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER,
+            price INTEGER,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (product_id) REFERENCES products(id)
+        )
+    ''')
+
     conn.commit()
     conn.close()
+    print("Database initialized.")
+
+
+def get_connection():
+    """Returns a new database connection."""
+    return sqlite3.connect(DB_NAME)
