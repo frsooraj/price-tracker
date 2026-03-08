@@ -8,14 +8,92 @@ import threading
 import time
 import random
 import os
-from flask import Flask
+from flask import Flask, jsonify, render_template_string
 
-# --- 1. FLASK KEEP-ALIVE SERVER ---
+# --- 1. FLASK DASHBOARD SERVER ---
 flask_app = Flask('')
+
+# Load the dashboard HTML
+DASHBOARD_PATH = os.path.join(os.path.dirname(__file__), 'dashboard.html')
 
 @flask_app.route('/')
 def home():
-    return "PricePulse Bot is alive and running!"
+    with open(DASHBOARD_PATH, 'r', encoding='utf-8') as f:
+        return render_template_string(f.read())
+
+@flask_app.route('/api/products')
+def api_products():
+    with db_lock:
+        conn = get_conn()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT id, user_id, product_name, current_price, url, target_price FROM products")
+        products = cursor.fetchall()
+
+        cursor.execute("SELECT COUNT(DISTINCT user_id) FROM products")
+        total_users = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM price_logs")
+        total_logs = cursor.fetchone()[0]
+
+        result = []
+        best_deal = None
+
+        for p_id, user_id, name, price, url, target in products:
+            cursor.execute(
+                "SELECT price, timestamp FROM price_logs WHERE product_id = ? ORDER BY timestamp ASC",
+                (p_id,)
+            )
+            history = [{"price": row[0], "timestamp": row[1]} for row in cursor.fetchall()]
+
+            cursor.execute("SELECT MIN(price) FROM price_logs WHERE product_id = ?", (p_id,))
+            lowest = cursor.fetchone()[0] or price
+
+            change = 0
+            if len(history) >= 2:
+                change = history[-1]['price'] - history[-2]['price']
+
+            log_count = len(history)
+
+            product_data = {
+                "id": p_id,
+                "user_id": user_id,
+                "product_name": name,
+                "current_price": price,
+                "url": url,
+                "target_price": target,
+                "lowest_price": lowest,
+                "change": change,
+                "log_count": log_count,
+                "history": history
+            }
+            result.append(product_data)
+
+            if best_deal is None or lowest < best_deal['lowest']:
+                best_deal = {"name": name, "lowest": lowest}
+
+        conn.close()
+
+    return jsonify({
+        "products": result,
+        "total_products": len(result),
+        "total_users": total_users,
+        "total_logs": total_logs,
+        "best_deal": best_deal
+    })
+
+@flask_app.route('/api/delete/<int:product_id>', methods=['DELETE'])
+def api_delete(product_id):
+    try:
+        with db_lock:
+            conn = get_conn()
+            conn.execute("DELETE FROM price_logs WHERE product_id = ?", (product_id,))
+            conn.execute("DELETE FROM products WHERE id = ?", (product_id,))
+            conn.commit()
+            conn.close()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -23,18 +101,16 @@ def run_flask():
 
 # --- 2. Configuration ---
 TOKEN = "8609572351:AAG4MOToTMpQyqldyjOpFrWZVm_Re2U2tVo"
+DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "http://localhost:10000")  # Change this on Render
 bot = telebot.TeleBot(TOKEN)
 
-# FIX: global lock to prevent simultaneous DB access across threads
 db_lock = threading.Lock()
 
-# --- FIX: single function to get DB connection with timeout ---
 def get_conn():
     conn = sqlite3.connect('tracker.db', timeout=20, check_same_thread=False)
-    conn.execute("PRAGMA journal_mode=WAL")  # WAL mode allows concurrent reads
+    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
-# --- Scraper headers ---
 def get_headers():
     agents = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -52,7 +128,6 @@ def get_headers():
         "Upgrade-Insecure-Requests": "1",
     }
 
-# --- Clean Amazon URL ---
 def clean_amazon_url(url):
     asin_match = re.search(r'/(?:dp|gp/product)/([A-Z0-9]{10})', url)
     if asin_match:
@@ -60,7 +135,6 @@ def clean_amazon_url(url):
         return f"https://www.amazon.in/dp/{asin}"
     return url
 
-# --- Scraper core ---
 def scrape_amazon(url):
     clean_url = clean_amazon_url(url)
     session = requests.Session()
@@ -99,7 +173,6 @@ def scrape_amazon(url):
         return title, None, "Price not found - item may be out of stock or unavailable"
     return title, price, None
 
-# --- Database Initialization ---
 def init_db():
     with db_lock:
         conn = get_conn()
@@ -115,7 +188,6 @@ def init_db():
         conn.commit()
         conn.close()
 
-# --- Monitor Thread ---
 def monitor_prices():
     while True:
         try:
@@ -155,10 +227,15 @@ def monitor_prices():
         time.sleep(60)
 
 # --- BOT COMMANDS ---
+
 @bot.message_handler(commands=['start'])
 def start(message):
     markup = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    markup.add(KeyboardButton("🔍 Track Price"), KeyboardButton("📊 My History"))
+    markup.add(
+        KeyboardButton("🔍 Track Price"),
+        KeyboardButton("📊 My History"),
+        KeyboardButton("🌐 Dashboard")
+    )
     bot.send_message(message.chat.id, "🤖 *PricePulse Pro v2.0*", reply_markup=markup, parse_mode='Markdown')
 
 @bot.message_handler(func=lambda m: m.text == "🔍 Track Price")
@@ -207,6 +284,26 @@ def delete_item(call):
     bot.answer_callback_query(call.id, "✅ Removed!")
     bot.edit_message_text("✅ Removed.", call.message.chat.id, call.message.message_id)
 
+@bot.message_handler(func=lambda m: m.text in ["/dashboard", "🌐 Dashboard"])
+def send_dashboard(message):
+    if DASHBOARD_URL.startswith("https://"):
+        # On Render — show clickable button
+        markup = InlineKeyboardMarkup()
+        markup.row(InlineKeyboardButton("🌐 Open Dashboard", url=DASHBOARD_URL))
+        bot.send_message(
+            message.chat.id,
+            "📊 *PricePulse Dashboard*\nTap below to open in browser:",
+            reply_markup=markup,
+            parse_mode='Markdown'
+        )
+    else:
+        # Running locally — just send the URL as text
+        bot.send_message(
+            message.chat.id,
+            f"📊 *PricePulse Dashboard*\n\nOpen this in your browser:\n`{DASHBOARD_URL}`",
+            parse_mode='Markdown'
+        )
+
 @bot.message_handler(func=lambda m: m.text and ("amazon.in" in m.text or "amzn.to" in m.text or m.text.startswith("http")))
 def handle_link(message):
     user_id = message.chat.id
@@ -218,7 +315,6 @@ def handle_link(message):
         url = url_match.group(1)
         clean_url = clean_amazon_url(url)
 
-        # Check duplicate
         with db_lock:
             conn = get_conn()
             cursor = conn.cursor()
@@ -290,7 +386,7 @@ def set_price(message):
 if __name__ == '__main__':
     init_db()
     threading.Thread(target=run_flask, daemon=True).start()
-    print("🌐 Keep-alive server running...")
+    print(f"🌐 Dashboard running at {DASHBOARD_URL}")
     threading.Thread(target=monitor_prices, daemon=True).start()
     print("📉 Price monitor active...")
     print("🤖 Bot is running...")
