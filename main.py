@@ -8,7 +8,7 @@ import threading
 import time
 import random
 import os
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, jsonify, render_template_string, request
 
 # --- 1. FLASK DASHBOARD SERVER ---
 flask_app = Flask('')
@@ -23,11 +23,17 @@ def home():
 
 @flask_app.route('/api/products')
 def api_products():
+    uid = request.args.get('uid', type=int)   # ← get uid from URL param
     with db_lock:
         conn = get_conn()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT id, user_id, product_name, current_price, url, target_price FROM products")
+        # filter by user if uid provided, else show all (admin fallback)
+        if uid:
+            cursor.execute("SELECT id, user_id, product_name, current_price, url, target_price FROM products WHERE user_id = ?", (uid,))
+        else:
+            cursor.execute("SELECT id, user_id, product_name, current_price, url, target_price FROM products")
+            
         products = cursor.fetchall()
 
         cursor.execute("SELECT COUNT(DISTINCT user_id) FROM products")
@@ -327,10 +333,12 @@ def delete_item(call):
 
 @bot.message_handler(func=lambda m: m.text in ["/dashboard", "🌐 Dashboard"])
 def send_dashboard(message):
-    if DASHBOARD_URL.startswith("https://"):
-        # On Render — show clickable button
+    user_id = message.chat.id
+    user_url = f"{DASHBOARD_URL}?uid={user_id}"   # ← add ?uid=
+    
+    if user_url.startswith("https://"):
         markup = InlineKeyboardMarkup()
-        markup.row(InlineKeyboardButton("🌐 Open Dashboard", url=DASHBOARD_URL))
+        markup.row(InlineKeyboardButton("🌐 Open Dashboard", url=user_url))
         bot.send_message(
             message.chat.id,
             "📊 *PricePulse Dashboard*\nTap below to open in browser:",
@@ -338,10 +346,9 @@ def send_dashboard(message):
             parse_mode='Markdown'
         )
     else:
-        # Running locally — just send the URL as text
         bot.send_message(
             message.chat.id,
-            f"📊 *PricePulse Dashboard*\n\nOpen this in your browser:\n`{DASHBOARD_URL}`",
+            f"📊 *PricePulse Dashboard*\n\nOpen this in your browser:\n`{user_url}`",
             parse_mode='Markdown'
         )
 

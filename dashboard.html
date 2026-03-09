@@ -531,7 +531,6 @@
 
 <div class="container" style="padding-top:0">
 
-  <!-- Stats Bar -->
   <div class="stats-bar">
     <div class="stat">
       <div class="stat-label">Total Products</div>
@@ -555,7 +554,6 @@
     </div>
   </div>
 
-  <!-- Products -->
   <div class="section-title">Tracked Products</div>
   <div class="products-grid" id="productsGrid">
     <div class="empty-state">
@@ -566,7 +564,6 @@
 
 </div>
 
-<!-- Modal -->
 <div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
   <div class="modal">
     <button class="modal-close" onclick="closeModal()">✕</button>
@@ -588,10 +585,12 @@
   </div>
 </div>
 
-<!-- Toast -->
 <div class="toast" id="toast"></div>
 
 <script>
+// Read uid from URL
+const uid = new URLSearchParams(window.location.search).get('uid');
+
 let chartInstance = null;
 let allProducts = [];
 
@@ -600,7 +599,8 @@ async function loadData(showSpinner = false) {
   if (showSpinner) btn.classList.add('spinning');
 
   try {
-    const res = await fetch('/api/products');
+    // Pass uid to API
+    const res = await fetch(`/api/products${uid ? '?uid=' + uid : ''}`);
     const data = await res.json();
     allProducts = data.products;
     renderStats(data);
@@ -621,6 +621,9 @@ function renderStats(data) {
   if (data.best_deal) {
     document.getElementById('statLowest').textContent = '₹' + data.best_deal.lowest.toLocaleString('en-IN');
     document.getElementById('statLowestName').textContent = data.best_deal.name.substring(0, 25) + '..';
+  } else {
+    document.getElementById('statLowest').textContent = '—';
+    document.getElementById('statLowestName').textContent = 'no data yet';
   }
 }
 
