@@ -46,6 +46,12 @@ def api_products():
         best_deal = None
 
         for p_id, user_id, name, price, url, target in products:
+            # Fetch user display name
+            cursor.execute("SELECT first_name, username FROM users WHERE user_id = ?", (user_id,))
+            user_row = cursor.fetchone()
+            user_name = user_row[0] if user_row else str(user_id)
+            tg_username = user_row[1] if user_row else ""
+
             cursor.execute(
                 "SELECT price, timestamp FROM price_logs WHERE product_id = ? ORDER BY timestamp ASC",
                 (p_id,)
@@ -64,6 +70,8 @@ def api_products():
             product_data = {
                 "id": p_id,
                 "user_id": user_id,
+                "user_name": user_name,
+                "tg_username": tg_username,
                 "product_name": name,
                 "current_price": price,
                 "url": url,
@@ -183,6 +191,10 @@ def init_db():
     with db_lock:
         conn = get_conn()
         cursor = conn.cursor()
+        cursor.execute('''CREATE TABLE IF NOT EXISTS users
+                     (user_id INTEGER PRIMARY KEY,
+                      first_name TEXT,
+                      username TEXT)''')
         cursor.execute('''CREATE TABLE IF NOT EXISTS products 
                      (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, 
                       product_name TEXT, current_price INTEGER, url TEXT,
@@ -191,6 +203,21 @@ def init_db():
                      (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER, 
                       price INTEGER, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                       FOREIGN KEY(product_id) REFERENCES products(id))''')
+        conn.commit()
+        conn.close()
+
+def save_user(message):
+    """Save or update user info from a Telegram message."""
+    uid = message.from_user.id
+    first_name = message.from_user.first_name or ""
+    username = message.from_user.username or ""
+    with db_lock:
+        conn = get_conn()
+        conn.execute(
+            "INSERT INTO users (user_id, first_name, username) VALUES (?, ?, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET first_name=excluded.first_name, username=excluded.username",
+            (uid, first_name, username)
+        )
         conn.commit()
         conn.close()
 
@@ -236,6 +263,7 @@ def monitor_prices():
 
 @bot.message_handler(commands=['start'])
 def start(message):
+    save_user(message)
     markup = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     markup.add(
         KeyboardButton("🔍 Track Price"),
@@ -251,6 +279,7 @@ def ask_link(message):
 
 @bot.message_handler(func=lambda m: m.text in ["/list", "📊 My History"])
 def show_list(message):
+    save_user(message)
     user_id = message.chat.id
     with db_lock:
         conn = get_conn()
@@ -354,6 +383,7 @@ def send_dashboard(message):
 
 @bot.message_handler(func=lambda m: m.text and ("amazon.in" in m.text or "amzn.to" in m.text or m.text.startswith("http")))
 def handle_link(message):
+    save_user(message)
     user_id = message.chat.id
     try:
         url_match = re.search(r'(https?://[^\s]+)', message.text)
@@ -404,6 +434,7 @@ def handle_link(message):
 
 @bot.message_handler(commands=['setprice'])
 def set_price(message):
+    save_user(message)
     try:
         parts = message.text.split()
         if len(parts) != 3:
